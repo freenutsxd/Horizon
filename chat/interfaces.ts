@@ -300,6 +300,7 @@ export namespace Settings {
     readonly horizonAutoGenderFilter: boolean;
     readonly horizonSavedGenderFilters: ReadonlyArray<string>;
     readonly horizonSavedMembersSort: string;
+    readonly horizonPersistentMemberFilters: boolean;
     readonly horizonGenderMarkerOrigColor: boolean;
     readonly horizonChangeOfflineColor: boolean;
     readonly horizonNotifyFriendSignIn: boolean;
