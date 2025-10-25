@@ -228,6 +228,8 @@ export interface ExtendedSearchData extends SearchData {
   species: SearchSpecies[];
 }
 
+export type AvailableSort = 'normal' | 'status' | 'gender' | 'compatibility';
+
 export namespace Settings {
   export type Keys = {
     settings: Settings;
@@ -299,7 +301,7 @@ export namespace Settings {
     readonly horizonShowGenderMarker: boolean;
     readonly horizonAutoGenderFilter: boolean;
     readonly horizonSavedGenderFilters: ReadonlyArray<string>;
-    readonly horizonSavedMembersSort: string;
+    readonly horizonSavedMembersSort: AvailableSort;
     readonly horizonPersistentMemberFilters: boolean;
     readonly horizonGenderMarkerOrigColor: boolean;
     readonly horizonChangeOfflineColor: boolean;
