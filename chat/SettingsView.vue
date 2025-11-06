@@ -274,6 +274,19 @@
           ></settings-checkbox>
         </div>
       </div>
+      <div class="mb-3">
+        <div class="form-check">
+          <input
+            class="form-check-input"
+            type="checkbox"
+            id="characterFriendsOnly"
+            v-model="characterFriendsOnly"
+          />
+          <label class="form-check-label" for="characterFriendsOnly">
+            {{ l('settings.characterFriendsOnly') }}
+          </label>
+        </div>
+      </div>
 
       <div class="mb-3">
         <div class="d-flex p-2 justify-content-between align-items-start">
@@ -1129,6 +1142,7 @@
     showNeedsReply!: boolean;
     enterSend!: boolean;
     colorBookmarks!: boolean;
+    characterFriendsOnly!: boolean;
     bbCodeBar!: boolean;
 
     risingAdScore!: boolean;
@@ -1193,6 +1207,7 @@
       this.showNeedsReply = settings.showNeedsReply;
       this.enterSend = settings.enterSend;
       this.colorBookmarks = settings.colorBookmarks;
+      this.characterFriendsOnly = settings.characterFriendsOnly;
       this.bbCodeBar = settings.bbCodeBar;
       this.availableImports = (
         await core.settingsStore.getAvailableCharacters()
@@ -1296,6 +1311,12 @@
         this.horizonSaveDraftMessagesToDiskTimer
       );
 
+      if (
+        this.characterFriendsOnly != core.state.settings.characterFriendsOnly
+      ) {
+        await core.characters.refreshFriends(this.characterFriendsOnly); //fetching is expensive, only do it when the config changes
+      }
+
       core.state.settings = {
         playSound: this.playSound,
         clickOpensMessage: this.clickOpensMessage,
@@ -1336,6 +1357,7 @@
         showNeedsReply: this.showNeedsReply,
         enterSend: this.enterSend,
         colorBookmarks: this.colorBookmarks,
+        characterFriendsOnly: this.characterFriendsOnly,
         bbCodeBar: this.bbCodeBar,
 
         risingAdScore: this.risingAdScore,
@@ -1401,7 +1423,6 @@
             ? this.risingCharacterTheme
             : undefined
       };
-
       console.log('SETTINGS', minAge, maxAge, core.state.settings);
 
       const newRisingFilter = JSON.parse(
