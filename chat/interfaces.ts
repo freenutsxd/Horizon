@@ -283,7 +283,8 @@ export namespace Settings {
     readonly showNeedsReply: boolean;
     readonly enterSend: boolean;
     readonly colorBookmarks: boolean;
-    readonly characterFriendsOnly: boolean;
+    readonly showPerCharacterFriends: boolean;
+    readonly hideNonCharacterFriends: boolean;
     readonly bbCodeBar: boolean;
 
     readonly risingAdScore: boolean;

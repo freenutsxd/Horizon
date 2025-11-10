@@ -81,7 +81,8 @@ export class Settings implements ISettings {
   showNeedsReply = false;
   enterSend = true;
   colorBookmarks = false;
-  characterFriendsOnly = false;
+  showPerCharacterFriends = true;
+  hideNonCharacterFriends = false;
   bbCodeBar = true;
 
   risingAdScore = true;
