@@ -453,7 +453,8 @@ export function createMainWindow(
   if (!tray) {
     tray = new electron.Tray(trayIcon);
     tray.setToolTip(l('title'));
-    tray.on('click', _e => tray.popUpContextMenu());
+    tray.on('click', _e => showAllWindows());
+    tray.on('double-click', _e => showAllWindows());
 
     tray.setContextMenu(electron.Menu.buildFromTemplate(createTrayMenu()));
     log.debug('init.window.add.tray');
@@ -565,17 +566,15 @@ function createTrayMenu(): electron.MenuItemConstructorOptions[] {
   ).map(([tabId, webContents]) => ({
     label: tabId,
     click: () => {
-      // Example: focus this tab, or any action you want
-      windows.forEach(winow => {
-        winow.webContents.focus();
-        winow.show();
-        winow.webContents.send('show-tab', webContents.id);
+      showAllWindows();
+      windows.forEach(window => {
+        window.webContents.send('show-tab', webContents.id);
       });
       webContents.focus();
     }
   }));
   return [
-    { label: l('title'), enabled: false },
+    { label: l('title'), click: () => showAllWindows() },
     { type: 'separator' },
     ...tabItems,
     {
@@ -635,11 +634,15 @@ export async function quitAllWindows() {
 }
 
 /**
- * Shows all browser windows.
+ * Restores, shows, and focuses all browser windows.
  * @function
  */
 export function showAllWindows() {
-  for (const w of windows) w.show();
+  for (const w of windows) {
+    if (w.isMinimized()) w.restore();
+    if (!w.isVisible()) w.show();
+    w.focus();
+  }
 }
 /**
  * Toggles the update notice in all browser windows through an IPC message.
