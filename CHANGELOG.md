@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Log syncing with Solstice! Simply go to the app menu, and click "Manage Data" to find the "Sync with Solstice" option. [[Commit]](https://github.com/Fchat-Horizon/Horizon/commit/c16f331d47cad189f891f1b1eabbb6347d4856a8)
+  - You'll need Solstice version 2026.9.1 or later to access its log sync function.
 - Added a toggle to open every clicked link in Incognito Mode. It's under 'Advanced' in the app settings menu. [[Commit]](https://github.com/Fchat-Horizon/Horizon/commit/76c0a2b5e622abddec2fc3ef58cbf3a67b485ccd)
 
 ### Changed
@@ -45,7 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Development
 
-- Upgraded to Electron 42 (`v42.4.1`) from `40.10.0`.
+- Upgraded to Electron 42 (`v42.4.1`) from `40.10.0`. [[Commit]](https://github.com/Fchat-Horizon/Horizon/commit/ac5a1bd4e4bb1483b01f482d046a553896682422)
+- Upgraded to Ghostery `v2.18.2` from `2.18.1`. [[Commit]](https://github.com/Fchat-Horizon/Horizon/commit/c39900292725b951361d112de797914e9df807e4)
 - Upgraded the pinned package manager to pnpm 11 (`v11.7.0`) from `10.33.0`. pnpm settings moved into `pnpm-workspace.yaml`, using the new `allowBuilds` map for build approvals and disabling the release-age cooldown.
 - The localization runtime now supports named placeholders (`l('key', { name })` with `{name}` in the string), plus a new `LocalizedText` component for using them in templates. [[Commit]](https://github.com/Fchat-Horizon/Horizon/commit/b2991aaaeddda4877ecab1aaa264f2d8818ba83d)
   - All existing locale strings were migrated to full sentences with named placeholders, so translators can reorder words naturally instead of translating sentence fragments. [[Commit]](https://github.com/Fchat-Horizon/Horizon/commit/76230fe5443c63bd8b5d065cda6f3fc7f672ceae)
@@ -76,6 +79,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - https://github.com/Fchat-Horizon/Horizon/pull/912 by @freenutsxd
 - https://github.com/Fchat-Horizon/Horizon/pull/914 by @freenutsxd
 - https://github.com/Fchat-Horizon/Horizon/pull/916 by @MoonBurst
+- https://github.com/Fchat-Horizon/Horizon/pull/938 by @FatCatClient
+- https://github.com/Fchat-Horizon/Horizon/pull/871 by @Kannamoris and @CodingWithAnxiety
+
+Non PR'd changes by @CodingWithAnxiety and @FatCatClient
 
 ## [2.3.3] - 2026-07-17
 
