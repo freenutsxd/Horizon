@@ -24,6 +24,7 @@
 import type AdmZip from 'adm-zip';
 import * as fs from 'fs';
 import * as path from 'path';
+import { TextDecoder } from 'util';
 import {
   binaryLogToJson,
   DamagedLogError,
@@ -33,12 +34,22 @@ import {
   readLogIndexName
 } from '../log-backup';
 import type { JsonLogMessage } from '../log-backup';
+import { SYNC_MAX_ENTRY_BYTES, SYNC_MAX_UNCOMPRESSED_BYTES } from './protocol';
 import type { LogMergeStats } from './protocol';
 
 // Highest Conversation.Message.Type enum value (Bcast); see chat/interfaces.ts
 // and docs/log-sync-protocol.md. Kept as a literal because this module is pure
 // Node and must not import chat/.
 const MAX_MESSAGE_TYPE = 6;
+const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+const neverCancelled = (): void => {};
+
+function archiveTooLargeError(message: string): Error {
+  return Object.assign(new Error(message), {
+    status: 413,
+    code: 'archive-too-large'
+  });
+}
 
 export interface FileMergeResult {
   added: number;
@@ -101,12 +112,15 @@ export function mergeLogFile(
   logsDir: string,
   key: string,
   incoming: JsonLogMessage[],
-  fallbackName?: string
+  fallbackName?: string,
+  checkCancelled: () => void = neverCancelled
 ): FileMergeResult {
+  checkCancelled();
   const file = path.join(logsDir, key);
   const exists = fs.existsSync(file);
   let existing: JsonLogMessage[];
   try {
+    checkCancelled();
     const original = exists ? fs.readFileSync(file) : Buffer.alloc(0);
     existing = binaryLogToJson(original, true);
     // Invalid UTF-8 must not silently become replacement characters either.
@@ -148,6 +162,7 @@ export function mergeLogFile(
   // a live log is never left paired with a stale or missing index.
   const indexBuffer = buildLogIndexBuffer(name, logBuffer);
 
+  checkCancelled();
   fs.mkdirSync(logsDir, { recursive: true });
   // Stage both files and retain the old pair until installation succeeds.
   // Remove the old index before replacing the log: even if rollback fails,
@@ -198,8 +213,10 @@ export function mergeLogFile(
  * Validates a character or conversation-key path segment from an untrusted
  * zip so it cannot escape the data directory.
  */
-function isSafeSegment(segment: string): boolean {
-  if (segment.length === 0 || segment.length > 255) return false;
+function isSafeSegment(segment: string, suffixBytes = 0): boolean {
+  if (segment.length === 0) return false;
+  if (Buffer.from(segment, 'utf8').toString('utf8') !== segment) return false;
+  if (Buffer.byteLength(segment, 'utf8') + suffixBytes > 255) return false;
   if (segment === '.' || segment === '..') return false;
   if (segment.startsWith('.')) return false;
   if (/[/\\]/.test(segment)) return false;
@@ -218,14 +235,19 @@ function resolveInside(baseDir: string, ...segments: string[]): string {
   return target;
 }
 
-function parseNamesEntry(zip: AdmZip, character: string): Map<string, string> {
+function parseNamesEntry(
+  zip: AdmZip,
+  character: string,
+  checkCancelled: () => void
+): Map<string, string> {
   const names = new Map<string, string>();
   const entry = zip.getEntry(`characters/${character}/logs-names.json`);
   // AdmZip does not bound inflate output when the declared size is zero.
   // Empty files cannot contain JSON, so never decompress them.
   if (!entry || entry.header.size === 0) return names;
+  checkCancelled();
   try {
-    const parsed: unknown = JSON.parse(entry.getData().toString('utf8'));
+    const parsed: unknown = JSON.parse(utf8Decoder.decode(entry.getData()));
     if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed))
       for (const [key, value] of Object.entries(parsed))
         if (typeof value === 'string' && value.length > 0)
@@ -248,6 +270,24 @@ export function archiveUncompressedBytes(zip: AdmZip): number {
   return total;
 }
 
+/** Rejects unsafe archive sizes using ZIP metadata, before any entry inflates. */
+export function validateSyncArchive(
+  zip: AdmZip,
+  checkCancelled: () => void = neverCancelled
+): number {
+  let total = 0;
+  for (const entry of zip.getEntries()) {
+    checkCancelled();
+    const size = entry.header.size;
+    if (size > SYNC_MAX_ENTRY_BYTES)
+      throw archiveTooLargeError('Sync archive entry is too large.');
+    total += size;
+    if (total > SYNC_MAX_UNCOMPRESSED_BYTES)
+      throw archiveTooLargeError('Sync archive is too large.');
+  }
+  return total;
+}
+
 /**
  * Parses one zip entry path against the sync zip layout
  * `characters/{character}/logs/{key}.json` (see docs/log-sync-protocol.md),
@@ -266,7 +306,7 @@ function parseLogEntryPath(
   if (top !== 'characters' || kind !== 'logs' || !file.endsWith('.json'))
     return undefined;
   const key = file.slice(0, -5);
-  if (!isSafeSegment(character) || !isSafeSegment(key)) return undefined;
+  if (!isSafeSegment(character) || !isSafeSegment(key, 4)) return undefined;
   if (['settings', 'eicons'].includes(character.toLowerCase()))
     return undefined;
   if (key.toLowerCase().endsWith('.idx') || isFilesystemArtifact(key))
@@ -279,7 +319,12 @@ function parseLogEntryPath(
  * (the logs-only export format, see docs/log-sync-protocol.md) into the
  * local log store at `dataDir`.
  */
-export function mergeLogsZip(dataDir: string, zip: AdmZip): LogMergeStats {
+export function mergeLogsZip(
+  dataDir: string,
+  zip: AdmZip,
+  checkCancelled: () => void = neverCancelled
+): LogMergeStats {
+  validateSyncArchive(zip, checkCancelled);
   const stats: LogMergeStats = {
     conversationsCreated: 0,
     conversationsUpdated: 0,
@@ -291,14 +336,16 @@ export function mergeLogsZip(dataDir: string, zip: AdmZip): LogMergeStats {
   const namesByCharacter = new Map<string, Map<string, string>>();
 
   for (const entry of zip.getEntries()) {
+    checkCancelled();
     if (!entry || entry.isDirectory || entry.header.size === 0) continue;
     const parsed = parseLogEntryPath(entry.entryName);
     if (parsed === undefined) continue;
     const { character, key } = parsed;
 
     let incoming: unknown;
+    checkCancelled();
     try {
-      incoming = JSON.parse(entry.getData().toString('utf8'));
+      incoming = JSON.parse(utf8Decoder.decode(entry.getData()));
     } catch {
       continue;
     }
@@ -308,7 +355,7 @@ export function mergeLogsZip(dataDir: string, zip: AdmZip): LogMergeStats {
 
     let names = namesByCharacter.get(character);
     if (names === undefined) {
-      names = parseNamesEntry(zip, character);
+      names = parseNamesEntry(zip, character, checkCancelled);
       namesByCharacter.set(character, names);
     }
 
@@ -320,7 +367,8 @@ export function mergeLogsZip(dataDir: string, zip: AdmZip): LogMergeStats {
       logsDir,
       key,
       messages,
-      names.get(key.toLowerCase())
+      names.get(key.toLowerCase()),
+      checkCancelled
     );
     if (result.skipped) stats.conversationsSkipped++;
     if (result.added > 0) {

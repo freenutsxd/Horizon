@@ -23,6 +23,7 @@ import { createManifest } from '../exporter/manifest';
 import { readIndexName } from './log-merge';
 import {
   SYNC_MAX_UNCOMPRESSED_BYTES,
+  SYNC_MAX_ENTRY_BYTES,
   SYNC_MAX_BODY_BYTES,
   SYNC_IV_LENGTH,
   SYNC_TAG_LENGTH
@@ -116,7 +117,10 @@ export async function buildLogsZip(
   const append = async (data: string, name: string): Promise<void> => {
     signal?.throwIfAborted();
     if (archiveError) throw archiveError;
-    uncompressedBytes += Buffer.byteLength(data);
+    const bytes = Buffer.byteLength(data);
+    if (bytes > SYNC_MAX_ENTRY_BYTES)
+      throw { status: 413, code: 'archive-too-large' };
+    uncompressedBytes += bytes;
     if (uncompressedBytes > SYNC_MAX_UNCOMPRESSED_BYTES)
       throw { status: 413, code: 'archive-too-large' };
     // Wait for each entry so archiver cannot queue an entire JSON log set in
@@ -174,16 +178,24 @@ export async function buildLogsZip(
       const names: { [key: string]: string } = Object.create(null);
       for (const file of files) {
         signal?.throwIfAborted();
-        if (
-          fs.statSync(path.join(logsDir, file)).size >
-          SYNC_MAX_UNCOMPRESSED_BYTES
-        )
+        if (fs.statSync(path.join(logsDir, file)).size > SYNC_MAX_ENTRY_BYTES)
           throw { status: 413, code: 'archive-too-large' };
         const messages = binaryLogToJson(
           fs.readFileSync(path.join(logsDir, file))
         );
+        // Count serialized records before joining: JSON expansion (e.g. NUL
+        // escapes) must not hit V8's string limit before the size check.
+        const records: string[] = [];
+        let jsonBytes = 2;
+        for (const message of messages) {
+          const record = JSON.stringify(message);
+          jsonBytes += Buffer.byteLength(record) + (records.length ? 1 : 0);
+          if (jsonBytes > SYNC_MAX_ENTRY_BYTES)
+            throw { status: 413, code: 'archive-too-large' };
+          records.push(record);
+        }
         await append(
-          JSON.stringify(messages),
+          `[${records.join(',')}]`,
           `characters/${character}/logs/${file}.json`
         );
         const name = readIndexName(path.join(logsDir, `${file}.idx`));

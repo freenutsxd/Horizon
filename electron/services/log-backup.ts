@@ -24,6 +24,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { TextDecoder } from 'util';
 
 /** One message inside a JSON log file. Times are seconds since epoch. */
 export interface JsonLogMessage {
@@ -62,6 +63,11 @@ export function isFilesystemArtifact(fileName: string): boolean {
 }
 
 const dayMs = 86400000;
+const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+
+function decodeJsonText(raw: Buffer | string): string {
+  return typeof raw === 'string' ? raw : utf8Decoder.decode(raw);
+}
 
 function localDay(timeSeconds: number): number {
   const date = new Date(timeSeconds * 1000);
@@ -149,7 +155,7 @@ export function jsonLogToBinary(json: JsonLogMessage[]): Buffer {
 export function parseJsonLog(raw: Buffer | string): JsonLog | undefined {
   let data: unknown;
   try {
-    data = JSON.parse(typeof raw === 'string' ? raw : raw.toString('utf8'));
+    data = JSON.parse(decodeJsonText(raw));
   } catch {
     return undefined;
   }
@@ -190,7 +196,9 @@ export function buildLogIndexBuffer(
 
   const chunks: Buffer[] = [header];
   let offset = 0;
-  let lastDay = 0;
+  // Day zero is a valid u16 index key (and the live writer emits it for a
+  // newly created conversation), so start below the representable range.
+  let lastDay = -1;
   while (offset + 10 <= log.length) {
     const senderLength = log.readUInt8(offset + 5);
     const textStart = offset + 6 + senderLength + 2;
@@ -200,7 +208,7 @@ export function buildLogIndexBuffer(
     if (next > log.length) break;
     if (log.readUInt16LE(next - 2) !== next - offset - 2) break;
     const day = localDay(log.readUInt32LE(offset));
-    if (day > lastDay && day <= 0xffff) {
+    if (day >= 0 && day > lastDay && day <= 0xffff) {
       const entry = Buffer.allocUnsafe(7);
       entry.writeUInt16LE(day, 0);
       entry.writeUIntLE(offset, 2, 5);
@@ -218,7 +226,7 @@ export function parseConversationNames(
 ): Map<string, string> | undefined {
   let data: unknown;
   try {
-    data = JSON.parse(typeof raw === 'string' ? raw : raw.toString('utf8'));
+    data = JSON.parse(decodeJsonText(raw));
   } catch {
     return undefined;
   }
@@ -239,7 +247,7 @@ export function parseRecentChannelNames(
 ): Map<string, string> | undefined {
   let data: unknown;
   try {
-    data = JSON.parse(typeof raw === 'string' ? raw : raw.toString('utf8'));
+    data = JSON.parse(decodeJsonText(raw));
   } catch {
     return undefined;
   }
