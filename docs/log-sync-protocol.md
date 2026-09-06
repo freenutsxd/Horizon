@@ -175,16 +175,6 @@ On Horizon, merged conversations are rewritten in the binary log format of `elec
 
 Outgoing archives use a private temporary directory and owner-only ZIP permissions. Stop cancels archive generation; a cancelled operation cannot return a terminal session to `paired`. Download state and the suspended session idle timer last until the response finishes sending. A stalled download socket is closed after 2 minutes of inactivity, while a progressing transfer can take longer.
 
-## Local verification
-
-These checks transpile TypeScript in memory and create their fixtures in temporary directories; they do not build the application or use real chat logs:
-
-```sh
-TZ=America/New_York node scripts/check-log-sync.cjs
-node scripts/check-log-sync-http.cjs
-pnpm typecheck
-pnpm i18n:check
-pnpm check
-```
+## Manual verification
 
 For the manual Electron/Solstice pass, verify that signing in with Save Login disabled permits sync after disconnecting the character; that a second Data Manager window cannot import or start another sync during the session; and that Stop, window close and interrupted phone connections cleanly allow a fresh session. Include a real transfer in both directions and check the merged history in each client.
