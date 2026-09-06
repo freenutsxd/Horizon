@@ -1054,6 +1054,7 @@
   "sync.state.paired": "Connected to {device}.",
   "sync.state.receiving": "Receiving logs from {device}...",
   "sync.state.sending": "Sending logs to {device}...",
+  "sync.state.stopping": "Stopping sync and finishing file cleanup...",
   "sync.state.waiting": "Waiting for a device to connect...",
   "sync.stop": "Stop session",
   "sync.summary": "Sync with {device} complete. {details}",

@@ -25,6 +25,9 @@ import { acquireDataSession } from '../data-session';
 
 interface ActiveSyncSession {
   server?: LogSyncServer;
+  starting?: Promise<LogSyncServer>;
+  stopping?: Promise<void>;
+  cancelled?: boolean;
   release: () => void;
 }
 let activeSession: ActiveSyncSession | undefined;
@@ -90,20 +93,14 @@ function applyServerState(vm: ExporterVm, server: LogSyncServer): void {
   switch (server.state) {
     case 'finished':
       vm.syncSummary = buildSummary(server);
-      activeSession.release();
-      activeSession = undefined;
-      resetSyncViewState(vm);
+      void endSyncSession(vm, false);
       break;
     case 'error':
       vm.syncError = describeError(server.errorCode);
-      activeSession.release();
-      activeSession = undefined;
-      resetSyncViewState(vm);
+      void endSyncSession(vm, false);
       break;
     case 'stopped':
-      activeSession.release();
-      activeSession = undefined;
-      resetSyncViewState(vm);
+      void endSyncSession(vm, false);
       break;
     default:
       break;
@@ -144,17 +141,18 @@ export async function startSyncSession(vm: ExporterVm): Promise<void> {
     activeSession = session;
     vm.syncActive = true;
     vm.syncState = 'waiting';
-    const server = await LogSyncServer.start({
+    session.starting = LogSyncServer.start({
       dataDir,
       account,
       tempDir: path.join(remote.app.getPath('temp'), 'horizon-sync'),
       onStateChange: changed => applyServerState(vm, changed)
     });
-    if (activeSession !== session) {
-      server.stop();
+    const server = await session.starting;
+    session.server = server;
+    if (activeSession !== session || session.cancelled) {
+      await server.stop();
       return;
     }
-    session.server = server;
 
     const payloadText = JSON.stringify(server.payload);
     const qrDataUrl = await QRCode.toDataURL(payloadText, {
@@ -162,7 +160,7 @@ export async function startSyncSession(vm: ExporterVm): Promise<void> {
       margin: 1,
       width: 280
     });
-    if (activeSession !== session) return;
+    if (activeSession !== session || session.cancelled) return;
     vm.syncQrDataUrl = qrDataUrl;
     vm.syncPayloadText = payloadText;
     vm.syncAddressText = server.payload.addrs
@@ -172,21 +170,46 @@ export async function startSyncSession(vm: ExporterVm): Promise<void> {
     vm.syncState = server.state;
   } catch (error) {
     log.error('sync.session.start.error', error);
-    if (session !== undefined && activeSession !== session) return;
-    stopSyncSession(vm);
+    if (
+      session !== undefined &&
+      (activeSession !== session || session.cancelled)
+    )
+      return;
+    await stopSyncSession(vm);
     vm.syncError = l('sync.error.generic', {
       reason: error instanceof Error ? error.message : String(error)
     });
   }
 }
 
-/** Stops the running session, if any, and clears the QR from the screen. */
-export function stopSyncSession(vm: ExporterVm): void {
+/** Keep the main-process lease until worker exit and temp-file cleanup. */
+function endSyncSession(vm: ExporterVm, stopServer: boolean): Promise<void> {
   const session = activeSession;
-  activeSession = undefined;
-  session?.server?.stop();
-  session?.release();
-  resetSyncViewState(vm);
+  if (!session) return Promise.resolve();
+  if (session.stopping) return session.stopping;
+  session.cancelled = true;
+  vm.syncState = 'stopping';
+  session.stopping = Promise.resolve().then(async () => {
+    try {
+      const server = session.server ?? (await session.starting);
+      if (stopServer) await server?.stop();
+      else await server?.whenIdle();
+    } catch (error) {
+      log.error('sync.session.stop.error', error);
+    } finally {
+      session.release();
+      if (activeSession === session) {
+        activeSession = undefined;
+        resetSyncViewState(vm);
+      }
+    }
+  });
+  return session.stopping;
+}
+
+/** Stops the session after any in-flight file commit has safely completed. */
+export function stopSyncSession(vm: ExporterVm): Promise<void> {
+  return endSyncSession(vm, true);
 }
 
 /**
@@ -217,6 +240,8 @@ export function describeSyncState(vm: ExporterVm): string {
       return l('sync.state.receiving', { device: peer });
     case 'merging':
       return l('sync.state.merging');
+    case 'stopping':
+      return l('sync.state.stopping');
     default:
       return '';
   }

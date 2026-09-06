@@ -58,6 +58,11 @@ import { Event } from 'electron/main';
 import { autoUpdater } from 'electron-updater';
 import Axios from 'axios';
 import { ProfileViewerGalleryType } from '../site/utils';
+import {
+  cancelSyncJobs,
+  hasSyncJobs,
+  registerSyncJobHandlers
+} from './services/sync/main-jobs';
 
 const configuredSessions = new WeakSet<electron.Session>();
 
@@ -87,6 +92,8 @@ let lastSuccessfulAccount: string | undefined;
 let autoBackupScheduler:
   | import('./services/exporter/auto-backup').AutoBackupScheduler
   | undefined;
+
+registerSyncJobHandlers(owner => dataSession?.owner === owner);
 
 async function tryHandleCli(): Promise<boolean> {
   const argv = process.argv.slice(1);
@@ -1661,6 +1668,7 @@ async function onReady(): Promise<void> {
         return;
       }
       characters.push(character);
+      browserWindows.registerConnectedTab(e.sender, character);
       e.returnValue = true;
       broadcastConnectedCharacters();
       if (autoBackupScheduler) autoBackupScheduler.runOnConnect();
@@ -1687,8 +1695,13 @@ async function onReady(): Promise<void> {
     const token = ++nextDataSessionToken;
     const release = (): void => {
       if (dataSession?.token !== token) return;
-      dataSession.cleanup();
-      dataSession = undefined;
+      void cancelSyncJobs(owner)
+        .catch(error => log.error('sync.archive.cleanup.error', error))
+        .finally(() => {
+          if (dataSession?.token !== token) return;
+          dataSession.cleanup();
+          dataSession = undefined;
+        });
     };
     const cleanup = (): void => {
       event.sender.removeListener('destroyed', release);
@@ -1701,6 +1714,10 @@ async function onReady(): Promise<void> {
   });
   electron.ipcMain.on('data-session-release', (event, token: number) => {
     if (dataSession?.owner === event.sender.id && dataSession.token === token) {
+      if (hasSyncJobs(event.sender.id)) {
+        event.returnValue = { error: 'job-in-progress' };
+        return;
+      }
       dataSession.cleanup();
       dataSession = undefined;
     }

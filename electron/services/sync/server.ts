@@ -14,15 +14,13 @@
  * See docs/log-sync-protocol.md for the protocol.
  */
 
-import AdmZip from 'adm-zip';
 import * as fs from 'fs';
 import * as http from 'http';
 import type { AddressInfo } from 'net';
 import type { Socket } from 'net';
 import * as os from 'os';
 import * as path from 'path';
-import { archiveUncompressedBytes, mergeLogsZip } from './log-merge';
-import { buildLogsZip } from './logs-zip';
+import { runArchiveJob } from './archive-job';
 import type { LogsZipResult } from './logs-zip';
 import {
   buildSessionPayload,
@@ -33,9 +31,6 @@ import {
   SYNC_ACTIVE_IDLE_TIMEOUT_MS,
   SYNC_MAX_AUTH_FAILURES,
   SYNC_MAX_BODY_BYTES,
-  SYNC_IV_LENGTH,
-  SYNC_TAG_LENGTH,
-  SYNC_MAX_UNCOMPRESSED_BYTES,
   SYNC_PROTOCOL_VERSION,
   SYNC_SESSION_TIMEOUT_MS
 } from './protocol';
@@ -95,6 +90,12 @@ export class LogSyncServer {
   private authFailures = 0;
   private busy = false;
   private readonly cancellation = new AbortController();
+  private readonly requests = new Set<Promise<void>>();
+
+  /** Resolves after pending file jobs and temporary-file cleanup have finished. */
+  async whenIdle(): Promise<void> {
+    await Promise.allSettled(Array.from(this.requests));
+  }
 
   private get ended(): boolean {
     return (
@@ -142,7 +143,11 @@ export class LogSyncServer {
           socket.on('close', () => instance.sockets.delete(socket));
         });
         server.on('request', (req, res) => {
-          void instance.handleRequest(req, res);
+          const request = instance.handleRequest(req, res);
+          instance.requests.add(request);
+          void request
+            .finally(() => instance.requests.delete(request))
+            .catch(() => {});
         });
         instance.bumpIdleTimer();
         resolve(instance);
@@ -151,8 +156,9 @@ export class LogSyncServer {
   }
 
   /** Ends the session; safe to call repeatedly. */
-  stop(finalState: SyncServerState = 'stopped'): void {
-    if (this.state === 'stopped' || this.state === 'error') return;
+  stop(finalState: SyncServerState = 'stopped'): Promise<void> {
+    if (this.state === 'stopped' || this.state === 'error')
+      return this.whenIdle();
     if (this.state !== 'finished') this.state = finalState;
     this.clearIdleTimer();
     this.cancellation.abort();
@@ -160,6 +166,7 @@ export class LogSyncServer {
     for (const socket of this.sockets) socket.destroy();
     this.sockets.clear();
     this.notify();
+    return this.whenIdle();
   }
 
   private fail(code: string): void {
@@ -416,22 +423,21 @@ export class LogSyncServer {
       fs.mkdirSync(this.options.tempDir, { recursive: true });
       tempDir = fs.mkdtempSync(path.join(this.options.tempDir, 'session-'));
       const zipFile = path.join(tempDir, 'logs.zip');
-      const result = await buildLogsZip(
-        this.options.dataDir,
-        zipFile,
+      const completed = await runArchiveJob(
+        {
+          kind: 'export',
+          dataDir: this.options.dataDir,
+          outFile: zipFile,
+          key: this.secrets.key
+        },
         transfer.signal
       );
       this.ensureActive();
       transfer.signal.throwIfAborted();
-      // The zip is streamed to disk; refuse to pull an oversized archive (plus
-      // its encrypt copies) into memory. Bounds the outgoing side to the same
-      // compressed body cap as an incoming upload.
-      if (
-        fs.statSync(zipFile).size + SYNC_IV_LENGTH + SYNC_TAG_LENGTH >
-        SYNC_MAX_BODY_BYTES
-      )
-        throw syncError(413, 'archive-too-large');
-      const encrypted = encryptBody(this.secrets.key, fs.readFileSync(zipFile));
+      if (completed.kind !== 'export')
+        throw new Error('Unexpected sync worker result');
+      const result = completed.result;
+      const encrypted = Buffer.from(completed.encrypted);
       res.writeHead(200, {
         'Content-Type': 'application/octet-stream',
         'Content-Length': encrypted.length
@@ -500,23 +506,34 @@ export class LogSyncServer {
     this.clearIdleTimer();
     this.setState('receiving');
     try {
-      const body = await this.readEncryptedBody(req);
+      const raw = await this.readBody(req);
+      this.ensureActive();
       this.setState('merging');
-      let zip: AdmZip;
-      try {
-        zip = new AdmZip(body);
-      } catch {
-        throw syncError(400, 'bad-zip');
-      }
-      // The 512 MiB body cap bounds the compressed upload, but the zip can
-      // inflate far past that. Reject before decompressing anything, using the
-      // central-directory sizes AdmZip will allocate from.
-      if (archiveUncompressedBytes(zip) > SYNC_MAX_UNCOMPRESSED_BYTES)
-        throw syncError(413, 'archive-too-large');
-      this.mergeStats = mergeLogsZip(this.options.dataDir, zip);
+      const encrypted = raw.buffer.slice(
+        raw.byteOffset,
+        raw.byteOffset + raw.byteLength
+      ) as ArrayBuffer;
+      const completed = await runArchiveJob(
+        {
+          kind: 'merge',
+          dataDir: this.options.dataDir,
+          encrypted,
+          key: this.secrets.key
+        },
+        this.cancellation.signal
+      );
+      this.ensureActive();
+      if (completed.kind !== 'merge')
+        throw new Error('Unexpected sync worker result');
+      this.mergeStats = completed.stats;
       this.respondJson(res, 200, { ok: true, ...this.mergeStats });
       this.setState('paired');
     } catch (error) {
+      if ((error as SyncError)?.code === 'bad-encryption') {
+        this.authFailures++;
+        if (this.authFailures >= SYNC_MAX_AUTH_FAILURES)
+          this.fail('too-many-auth-failures');
+      }
       this.recoverToPaired();
       throw error;
     } finally {

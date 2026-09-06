@@ -19,6 +19,7 @@
       "**/*"
     ],
     "asarUnpack": [
+      "sync-worker.js",
       "themes/**/*",
       "sound-themes/**/*"
     ],

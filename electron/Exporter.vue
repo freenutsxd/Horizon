@@ -1487,6 +1487,8 @@
         syncPeerName: undefined as string | undefined,
         syncSummary: undefined as string | undefined,
         syncError: undefined as string | undefined,
+        closePending: false,
+        closeApproved: false,
 
         connectedCharacters: [] as string[],
         autoBackups: [] as {
@@ -1689,6 +1691,15 @@
       }
 
       window.addEventListener('beforeunload', e => {
+        if (this.closeApproved) {
+          this.closeApproved = false;
+          return;
+        }
+        if (this.syncActive) {
+          e.preventDefault();
+          void this.close();
+          return;
+        }
         if (
           this.exportInProgress ||
           this.importInProgress ||
@@ -1697,7 +1708,6 @@
           e.preventDefault();
           return;
         }
-        ImportExport.stopSyncSession(this);
       });
 
       window.addEventListener('keyup', e => {
@@ -1854,8 +1864,8 @@
       startSyncSession(): Promise<void> {
         return ImportExport.startSyncSession(this);
       },
-      stopSyncSession(): void {
-        ImportExport.stopSyncSession(this);
+      stopSyncSession(): Promise<void> {
+        return ImportExport.stopSyncSession(this);
       },
       copySyncPayload(): void {
         ImportExport.copySyncPayload(this);
@@ -1940,7 +1950,8 @@
           '02:00'
         ];
       },
-      close(): void {
+      async close(): Promise<void> {
+        if (this.closePending) return;
         if (
           this.exportInProgress ||
           this.importInProgress ||
@@ -1959,8 +1970,14 @@
           });
           if (choice === 0) return;
         }
-        ImportExport.stopSyncSession(this);
-        browserWindow.close();
+        this.closePending = true;
+        try {
+          await ImportExport.stopSyncSession(this);
+          this.closeApproved = true;
+          browserWindow.close();
+        } finally {
+          this.closePending = false;
+        }
       },
       toggleVanillaCharacters(): void {
         this.setVanillaCharacters(!this.allVanillaCharactersSelected);

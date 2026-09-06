@@ -1,6 +1,6 @@
 # Horizon <-> Solstice Log Sync Protocol (v1)
 
-This document is the canonical specification of the LAN log sync protocol between Horizon (desktop) and Solstice (mobile). Horizon's reference implementation lives in `electron/services/sync/`.
+This document is the canonical specification of the LAN log sync protocol between Horizon (desktop) and Solstice (mobile). Horizon's reference implementation lives in `electron/services/sync/`. The Data Manager renderer serves HTTP; a main-process broker runs archive and merge work in a Node worker so the UI stays responsive.
 
 The goal: a user logged into the **same F-List account** on both devices scans a QR code shown by Horizon, and the two clients exchange chat logs so that **both end up with the union of all messages**. Only chat logs are transferred. Global settings, character settings, drafts, pins, recents and hidden lists are never touched.
 
@@ -173,7 +173,7 @@ On Horizon, merged conversations are rewritten in the binary log format of `elec
 - Encrypted bodies are capped at 512 MiB, in either direction (the outgoing `GET /v1/logs` archive is bounded to the same limit before it is read into memory).
 - Each uncompressed JSON entry is capped at 64 MiB, and the whole archive at 2 GiB. Oversized entries reject the upload with `413 {"error": "archive-too-large"}` before any conversation is changed. Outgoing local binary conversations are also capped at 64 MiB, and JSON expansion is counted record by record before joining the document. Incoming sizes are checked from the ZIP central directory before decompression; entries declaring zero size are skipped without inflating them. Outgoing JSON sizes are counted as each entry is prepared, and entries are compressed sequentially to avoid queuing the entire archive in memory. Solstice must apply the same limit for the two sides to agree.
 
-Outgoing archives use a private temporary directory and owner-only ZIP permissions. Stop cancels archive generation; a cancelled operation cannot return a terminal session to `paired`. Download state and the suspended session idle timer last until the response finishes sending. A stalled download socket is closed after 2 minutes of inactivity, while a progressing transfer can take longer.
+Outgoing archives use a private temporary directory and owner-only ZIP permissions. Stop cancels archive generation and requests merge cancellation before the next file commit. A log/index replacement already in progress finishes or rolls back before cancellation completes. The UI shows a stopping state and retains the main-process lease until the worker exits and temporary-file cleanup finishes; window close waits for the same drain. Main also cancels and drains a worker if its renderer crashes. A cancelled operation cannot return a terminal session to `paired`. Download state and the suspended session idle timer last until the response finishes sending. A stalled download socket is closed after 2 minutes of inactivity, while a progressing transfer can take longer.
 
 ## Manual verification
 
