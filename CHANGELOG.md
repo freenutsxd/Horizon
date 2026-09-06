@@ -7,12 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.4.0-beta.0] - 2026-09-06
-
 ### Added
 
 - Log syncing with Solstice! Simply go to the app menu, and click "Manage Data" to find the "Sync with Solstice" option. [[Commit]](https://github.com/Fchat-Horizon/Horizon/commit/c16f331d47cad189f891f1b1eabbb6347d4856a8)
-  - You'll need Solstice version 2026.9.1 or later to access its log sync function.
+  - You'll need Solstice version 2026.9.0 or later to access its log sync function.
 - Added a toggle to open every clicked link in Incognito Mode. It's under 'Advanced' in the app settings menu. [[Commit]](https://github.com/Fchat-Horizon/Horizon/commit/76c0a2b5e622abddec2fc3ef58cbf3a67b485ccd)
 
 ### Changed
