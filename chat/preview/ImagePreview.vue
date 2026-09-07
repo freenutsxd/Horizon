@@ -38,7 +38,6 @@
       src="about:blank"
       webpreferences="autoplayPolicy=no-user-gesture-required,contextIsolation,sandbox,disableDialogs,disableHtmlFullScreenWindowResize,webSecurity,enableWebSQL=no,nodeIntegration=no,nativeWindowOpen=no,nodeIntegrationInWorker=no,nodeIntegrationInSubFrames=no,webviewTag=no"
       enableremotemodule="false"
-      nodeIntegration="false"
       partition="persist:adblocked"
       id="image-preview-ext"
       ref="imagePreviewExt"
