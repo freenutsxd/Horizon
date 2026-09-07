@@ -23,7 +23,6 @@ import { createManifest } from '../exporter/manifest';
 import { readIndexName } from './log-merge';
 import {
   SYNC_MAX_UNCOMPRESSED_BYTES,
-  SYNC_MAX_ENTRY_BYTES,
   SYNC_MAX_BODY_BYTES,
   SYNC_IV_LENGTH,
   SYNC_TAG_LENGTH
@@ -118,8 +117,6 @@ export async function buildLogsZip(
     signal?.throwIfAborted();
     if (archiveError) throw archiveError;
     const bytes = Buffer.byteLength(data);
-    if (bytes > SYNC_MAX_ENTRY_BYTES)
-      throw { status: 413, code: 'archive-too-large' };
     uncompressedBytes += bytes;
     if (uncompressedBytes > SYNC_MAX_UNCOMPRESSED_BYTES)
       throw { status: 413, code: 'archive-too-large' };
@@ -178,19 +175,17 @@ export async function buildLogsZip(
       const names: { [key: string]: string } = Object.create(null);
       for (const file of files) {
         signal?.throwIfAborted();
-        if (fs.statSync(path.join(logsDir, file)).size > SYNC_MAX_ENTRY_BYTES)
-          throw { status: 413, code: 'archive-too-large' };
         const messages = binaryLogToJson(
           fs.readFileSync(path.join(logsDir, file))
         );
-        // Count serialized records before joining: JSON expansion (e.g. NUL
-        // escapes) must not hit V8's string limit before the size check.
+        // Count serialized records before joining so JSON expansion (for
+        // example NUL escapes) participates in the archive-wide limit.
         const records: string[] = [];
         let jsonBytes = 2;
         for (const message of messages) {
           const record = JSON.stringify(message);
           jsonBytes += Buffer.byteLength(record) + (records.length ? 1 : 0);
-          if (jsonBytes > SYNC_MAX_ENTRY_BYTES)
+          if (uncompressedBytes + jsonBytes > SYNC_MAX_UNCOMPRESSED_BYTES)
             throw { status: 413, code: 'archive-too-large' };
           records.push(record);
         }

@@ -43,9 +43,6 @@ export const SYNC_MAX_BODY_BYTES = 512 * 1024 * 1024;
  */
 export const SYNC_MAX_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024;
 
-/** Bound each JSON document well below V8's string limit before decoding. */
-export const SYNC_MAX_ENTRY_BYTES = 64 * 1024 * 1024;
-
 /** A session that has not completed a handshake expires after this long. */
 export const SYNC_SESSION_TIMEOUT_MS = 10 * 60 * 1000;
 

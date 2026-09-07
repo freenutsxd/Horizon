@@ -34,7 +34,7 @@ import {
   readLogIndexName
 } from '../log-backup';
 import type { JsonLogMessage } from '../log-backup';
-import { SYNC_MAX_ENTRY_BYTES, SYNC_MAX_UNCOMPRESSED_BYTES } from './protocol';
+import { SYNC_MAX_UNCOMPRESSED_BYTES } from './protocol';
 import type { LogMergeStats } from './protocol';
 
 // Highest Conversation.Message.Type enum value (Bcast); see chat/interfaces.ts
@@ -279,8 +279,6 @@ export function validateSyncArchive(
   for (const entry of zip.getEntries()) {
     checkCancelled();
     const size = entry.header.size;
-    if (size > SYNC_MAX_ENTRY_BYTES)
-      throw archiveTooLargeError('Sync archive entry is too large.');
     total += size;
     if (total > SYNC_MAX_UNCOMPRESSED_BYTES)
       throw archiveTooLargeError('Sync archive is too large.');
