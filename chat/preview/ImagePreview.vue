@@ -31,14 +31,13 @@
       ></a>
     </div>
 
-    <!-- note: preload requires a webpack config CopyPlugin configuration -->
+    <!-- note: preload requires a webpack config CopyPlugin configuration
+     also: don't add allowpopups here in any form. see https://www.electronjs.org/docs/latest/api/webview-tag#allowpopups -->
     <webview
       preload="./preview/assets/browser.pre.js"
       src="about:blank"
       webpreferences="autoplayPolicy=no-user-gesture-required,contextIsolation,sandbox,disableDialogs,disableHtmlFullScreenWindowResize,webSecurity,enableWebSQL=no,nodeIntegration=no,nativeWindowOpen=no,nodeIntegrationInWorker=no,nodeIntegrationInSubFrames=no,webviewTag=no"
       enableremotemodule="false"
-      allowpopups="false"
-      nodeIntegration="false"
       partition="persist:adblocked"
       id="image-preview-ext"
       ref="imagePreviewExt"
